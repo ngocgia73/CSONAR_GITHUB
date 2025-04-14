@@ -13,19 +13,19 @@ jobs:
     # MrHermeling is Marks basement machine
     # - MrHermeling
     env:
-      CODESONAR: /opt/codesonar/codesonar/bin/codesonar
+      CODESONAR: /home/daniel/share_data/codesonar/codesonar-8.2p0/codesonar/bin/codesonar
       # JAVA_HOME needed to execute Kotlin Detekt tool
-      JAVA_HOME: /opt/codesonar/win32-fetcher/jdk-11-x86_64-pc-linux-gnu
-      JAVAC: /opt/codesonar/win32-fetcher/jdk-11-x86_64-pc-linux-gnu/bin/javac
-      JAVA: /opt/codesonar/win32-fetcher/jdk-11-x86_64-pc-linux-gnu/bin/java
-      CS_JAVA_SCAN: /opt/codesonar/codesonar/bin/cs-java-scan
+      #JAVA_HOME: /opt/codesonar/win32-fetcher/jdk-11-x86_64-pc-linux-gnu
+      #JAVAC: /opt/codesonar/win32-fetcher/jdk-11-x86_64-pc-linux-gnu/bin/javac
+      #JAVA: /opt/codesonar/win32-fetcher/jdk-11-x86_64-pc-linux-gnu/bin/java
+      #CS_JAVA_SCAN: /opt/codesonar/codesonar/bin/cs-java-scan
       CSONAR_HUB_USER: "${{ secrets.CSONAR_HUB_USER }}"
-      HUB_CERT: "${{ secrets.ROB_HUB_CERT }}"
-      HUB_KEY: "${{ secrets.ROB_HUB_KEY }}"
-      CSONAR_HUB_URL: "https://partnerdemo.codesonar.com"
-      CSPYTHON: /opt/codesonar/codesonar/bin/cspython
-      CSO_GITHUB: /opt/codesonar-github
-      GITHUB_CAFILE: ".github/github.cert.pem"
+      #HUB_CERT: "${{ secrets.ROB_HUB_CERT }}"
+      #HUB_KEY: "${{ secrets.ROB_HUB_KEY }}"
+      CSONAR_HUB_URL: "http://0.0.0.0:7340"
+      #CSPYTHON: /opt/codesonar/codesonar/bin/cspython
+      #CSO_GITHUB: /opt/codesonar-github
+      #GITHUB_CAFILE: ".github/github.cert.pem"
       GH_TOKEN: ${{ secrets.GH_TOKEN }}
       PULL_REQUEST_ID: ${{ github.event.pull_request.number }}
       
@@ -48,8 +48,6 @@ jobs:
           -clean
           -auth certificate
           -hubuser "$CSONAR_HUB_USER"
-          -hubcert ./hubCert
-          -hubkey ./hubKey
           -project /ROB/"$PROJECT_NAME"
           "$PROJECT_NAME"
           "$CSONAR_HUB_URL"
