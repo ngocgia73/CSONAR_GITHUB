@@ -1,0 +1,129 @@
+name: Codesonar GitHub Demo
+on:
+  pull_request:
+env:
+  PROJECT_NAME: ${{ github.event.repository.name }}
+jobs:
+  analyze:
+  # perm required to solve "Resource not accessible by integration" warning when trying to upload SARIF
+    permissions: write-all
+    runs-on:
+    # Debian 12 is my laptop
+      - Debian12
+    # MrHermeling is Marks basement machine
+    # - MrHermeling
+    env:
+      CODESONAR: /opt/codesonar/codesonar/bin/codesonar
+      # JAVA_HOME needed to execute Kotlin Detekt tool
+      JAVA_HOME: /opt/codesonar/win32-fetcher/jdk-11-x86_64-pc-linux-gnu
+      JAVAC: /opt/codesonar/win32-fetcher/jdk-11-x86_64-pc-linux-gnu/bin/javac
+      JAVA: /opt/codesonar/win32-fetcher/jdk-11-x86_64-pc-linux-gnu/bin/java
+      CS_JAVA_SCAN: /opt/codesonar/codesonar/bin/cs-java-scan
+      CSONAR_HUB_USER: "${{ secrets.CSONAR_HUB_USER }}"
+      HUB_CERT: "${{ secrets.ROB_HUB_CERT }}"
+      HUB_KEY: "${{ secrets.ROB_HUB_KEY }}"
+      CSONAR_HUB_URL: "https://partnerdemo.codesonar.com"
+      CSPYTHON: /opt/codesonar/codesonar/bin/cspython
+      CSO_GITHUB: /opt/codesonar-github
+      GITHUB_CAFILE: ".github/github.cert.pem"
+      GH_TOKEN: ${{ secrets.GH_TOKEN }}
+      PULL_REQUEST_ID: ${{ github.event.pull_request.number }}
+      
+    container:
+    # this container includes analysis support for C/C++, Java, Python, JS family, Kotlin
+      image: ghcr.io/rdaultongt/csonar_github:toolchain-codesonar8.3p0
+      credentials:
+         username: ${{ secrets.DOCKER_USER }}
+         password: ${{ secrets.DOCKER_PASS }}
+    timeout-minutes: 360
+    steps:
+     - uses: actions/checkout@v3
+     - name: setup credentials files
+       run: |
+          echo "$HUB_CERT" > hubCert
+          echo "$HUB_KEY" > hubKey
+     - name: build C/C++
+       run: >
+          "$CODESONAR" build
+          -clean
+          -auth certificate
+          -hubuser "$CSONAR_HUB_USER"
+          -hubcert ./hubCert
+          -hubkey ./hubKey
+          -project /ROB/"$PROJECT_NAME"
+          "$PROJECT_NAME"
+          "$CSONAR_HUB_URL"
+          gcc -c -I. demo.cpp second.cpp
+     - name: Analyze Rust
+       run: |
+              export PATH=$PATH:/root/.cargo/bin
+              # Rust Clippy toolchain exists in the container, but without the command below, the clippy analysis warns:
+              # "error: rustup could not choose a version of cargo to run, because one wasn't specified explicitly, and no default is configured."
+              # "help: run 'rustup default stable' to download the latest stable release of Rust and set it as your default toolchain."
+              rustup default stable
+              # cargo clippy --no-deps --message-format=json -- -Wclippy::all  -Wclippy::pedantic -Wclippy::deprecated | clippy-sarif > rust.sarif
+              "$CODESONAR" build -auth certificate -hubuser "$CSONAR_HUB_USER"  -hubcert ./hubCert -hubkey ./hubKey -project /ROB/"$PROJECT_NAME" "$PROJECT_NAME" "$CSONAR_HUB_URL" "$CODESONAR" rust_scan.py ripgrep -X,--,--cap-lints,warn
+     - name: Analyze Python 
+       run: |
+              export PATH=$PATH:/opt/codesonar/codesonar/bin
+              "$CODESONAR" build -auth certificate -hubuser "$CSONAR_HUB_USER"  -hubcert ./hubCert -hubkey ./hubKey -project /ROB/"$PROJECT_NAME" "$PROJECT_NAME" "$CSONAR_HUB_URL" "$CODESONAR" python_scan.py -include-sources "PYTHON/*.py"
+    # - name: Build and Analyze Java
+    #   run: |
+    #        "$JAVAC" -cp "JAVA/javax.servlet.jar" JAVA/MyServletDemo.java
+    #        "$CODESONAR" build -auth certificate -hubuser "$CSONAR_HUB_USER"  -hubcert ./hubCert -hubkey ./hubKey -project /ROB/"$PROJECT_NAME" "$PROJECT_NAME" "$CSONAR_HUB_URL" -preset java_security "$CS_JAVA_SCAN" -include-artifacts JAVA/MyServletDemo.class -include-sources "JAVA/*.java"
+     - name: analyze NodeGoat JS sources
+       run: |
+            # cd NODEGOAT
+            # npm install eslint
+            # npm install @microsoft/eslint-formatter-sarif
+            # eslint --no-inline-config -c ./.eslintrc.js -f @microsoft/eslint-formatter-sarif -o nodegoat.sarif app || true
+            # cd ..
+            # "$CODESONAR" build -auth certificate -hubuser "$CSONAR_HUB_USER"  -hubcert ./hubCert -hubkey ./hubKey -project /ROB/"$PROJECT_NAME" "$PROJECT_NAME" "$CSONAR_HUB_URL" "$CODESONAR" import_sarif.py NODEGOAT/nodegoat.sarif -analyzer eslint -include-sources "NODEGOAT/app/**/*.js"
+     - name: analyze Go
+       run: |
+           export PATH=$PATH:/usr/local/go/bin:/root/go/bin
+           "$CODESONAR" build -auth certificate -hubuser "$CSONAR_HUB_USER"  -hubcert ./hubCert -hubkey ./hubKey -project /ROB/"$PROJECT_NAME" "$PROJECT_NAME" "$CSONAR_HUB_URL" -foreground -property GITHUB_COMMIT_SHA $GITHUB_SHA "$CODESONAR" go_scan.py . -C GO
+     - name: analyze the whole codebase + Kotlin OKHTTP sources
+       run: |
+           "$CODESONAR" analyze -auth certificate -hubuser "$CSONAR_HUB_USER"  -hubcert ./hubCert -hubkey ./hubKey -project /ROB/"$PROJECT_NAME" "$PROJECT_NAME" "$CSONAR_HUB_URL" -foreground -property GITHUB_COMMIT_SHA $GITHUB_SHA "$CODESONAR" kotlin_scan.py OKHTTP/okhttp3
+     - name: Fail Action if there are new warnings
+       run: newCount=`"$CODESONAR" dump_warnings.py --project-file "$PROJECT_NAME" -auth certificate -hubuser "$CSONAR_HUB_USER" -hubcert ./hubCert -hubkey ./hubKey --hub "$CSONAR_HUB_URL" --visible-warnings new | wc`
+     - name: Pull Analysis Results from CodeSonar Hub
+       run: >
+          "$CODESONAR" dump_warnings.py
+          -o warnings.sarif
+          --hub "$CSONAR_HUB_URL"
+          -auth certificate -hubuser "$CSONAR_HUB_USER" -hubcert ./hubCert -hubkey ./hubKey
+          --project-file "$PROJECT_NAME"
+          --sarif
+          --src-root "$GITHUB_WORKSPACE"
+          --visible-warnings excludeSourcelessArtifacts
+          -t 7200
+     - name: Push Analysis Results to GitHub
+       uses: github/codeql-action/upload-sarif@v3
+       with:
+          sarif_file: warnings.sarif
+     - name: Push Summary Report
+       if: ${{ github.event.pull_request }}
+       run: >
+          "$CSPYTHON" "$CSO_GITHUB/sarif_summary.py"
+          warnings.sarif
+          "$CSONAR_HUB_URL"
+          "$PROJECT_NAME"
+          | "$CSPYTHON" "$CSO_GITHUB/push_github_pr_comment.py"
+          --api-url "$GITHUB_API_URL"
+          --cafile "$GITHUB_CAFILE"
+          "$GITHUB_REPOSITORY"
+          "$PULL_REQUEST_ID"
+          GH_TOKEN
+     - name: generate PDF report
+       run: |
+          AID=`"$CODESONAR" analysis_id.py "$PROJECT_NAME"`
+          "$CODESONAR" get -auth certificate -hubuser "$CSONAR_HUB_USER" -hubcert ./hubCert -hubkey ./hubKey "$CSONAR_HUB_URL/report/aid-$AID-analysis.pdf?size=A4&orientation=landscape"
+     - name: upload SARIF and PDF Report to GitHub
+       uses: actions/upload-artifact@v4
+       with:
+         name: Upload Artifacts
+         path: |
+           warnings.sarif
+           **/*.pdf
