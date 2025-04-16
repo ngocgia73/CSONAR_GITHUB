@@ -36,5 +36,5 @@ void memoryLeak()
 void dividebyzero()
 {
     int a = 10;
-    int b = a/0;
+    int c = a/0;
 }
