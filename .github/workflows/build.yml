@@ -8,7 +8,7 @@ jobs:
   # perm required to solve "Resource not accessible by integration" warning when trying to upload SARIF
     permissions: write-all
     runs-on:
-    # Debian 12 is my laptop
+    # VM-Ubuntu is my laptop
       - VM-Ubuntu
     # MrHermeling is Marks basement machine
     # - MrHermeling
@@ -20,6 +20,7 @@ jobs:
       #JAVA: /opt/codesonar/win32-fetcher/jdk-11-x86_64-pc-linux-gnu/bin/java
       #CS_JAVA_SCAN: /opt/codesonar/codesonar/bin/cs-java-scan
       CSONAR_HUB_USER: "${{ secrets.CSONAR_HUB_USER }}"
+      CSONAR_HUB_PASS: "${{ secrets.CSONAR_HUB_PASS }}"
       #HUB_CERT: "${{ secrets.ROB_HUB_CERT }}"
       #HUB_KEY: "${{ secrets.ROB_HUB_KEY }}"
       CSONAR_HUB_URL: "http://0.0.0.0:7340"
@@ -42,48 +43,17 @@ jobs:
        run: |
           echo "$HUB_CERT" > hubCert
           echo "$HUB_KEY" > hubKey
+          echo "testing" > test 
      - name: build C/C++
        run: >
-          "$CODESONAR" build
+          "$CODESONAR" analyze
           -clean
-          -auth certificate
+          -auth password
           -hubuser "$CSONAR_HUB_USER"
-          -project /ROB/"$PROJECT_NAME"
+          -project "$PROJECT_NAME"
           "$PROJECT_NAME"
           "$CSONAR_HUB_URL"
           gcc -c -I. demo.cpp second.cpp
-     - name: Analyze Rust
-       run: |
-              export PATH=$PATH:/root/.cargo/bin
-              # Rust Clippy toolchain exists in the container, but without the command below, the clippy analysis warns:
-              # "error: rustup could not choose a version of cargo to run, because one wasn't specified explicitly, and no default is configured."
-              # "help: run 'rustup default stable' to download the latest stable release of Rust and set it as your default toolchain."
-              rustup default stable
-              # cargo clippy --no-deps --message-format=json -- -Wclippy::all  -Wclippy::pedantic -Wclippy::deprecated | clippy-sarif > rust.sarif
-              "$CODESONAR" build -auth certificate -hubuser "$CSONAR_HUB_USER"  -hubcert ./hubCert -hubkey ./hubKey -project /ROB/"$PROJECT_NAME" "$PROJECT_NAME" "$CSONAR_HUB_URL" "$CODESONAR" rust_scan.py ripgrep -X,--,--cap-lints,warn
-     - name: Analyze Python 
-       run: |
-              export PATH=$PATH:/opt/codesonar/codesonar/bin
-              "$CODESONAR" build -auth certificate -hubuser "$CSONAR_HUB_USER"  -hubcert ./hubCert -hubkey ./hubKey -project /ROB/"$PROJECT_NAME" "$PROJECT_NAME" "$CSONAR_HUB_URL" "$CODESONAR" python_scan.py -include-sources "PYTHON/*.py"
-    # - name: Build and Analyze Java
-    #   run: |
-    #        "$JAVAC" -cp "JAVA/javax.servlet.jar" JAVA/MyServletDemo.java
-    #        "$CODESONAR" build -auth certificate -hubuser "$CSONAR_HUB_USER"  -hubcert ./hubCert -hubkey ./hubKey -project /ROB/"$PROJECT_NAME" "$PROJECT_NAME" "$CSONAR_HUB_URL" -preset java_security "$CS_JAVA_SCAN" -include-artifacts JAVA/MyServletDemo.class -include-sources "JAVA/*.java"
-     - name: analyze NodeGoat JS sources
-       run: |
-            # cd NODEGOAT
-            # npm install eslint
-            # npm install @microsoft/eslint-formatter-sarif
-            # eslint --no-inline-config -c ./.eslintrc.js -f @microsoft/eslint-formatter-sarif -o nodegoat.sarif app || true
-            # cd ..
-            # "$CODESONAR" build -auth certificate -hubuser "$CSONAR_HUB_USER"  -hubcert ./hubCert -hubkey ./hubKey -project /ROB/"$PROJECT_NAME" "$PROJECT_NAME" "$CSONAR_HUB_URL" "$CODESONAR" import_sarif.py NODEGOAT/nodegoat.sarif -analyzer eslint -include-sources "NODEGOAT/app/**/*.js"
-     - name: analyze Go
-       run: |
-           export PATH=$PATH:/usr/local/go/bin:/root/go/bin
-           "$CODESONAR" build -auth certificate -hubuser "$CSONAR_HUB_USER"  -hubcert ./hubCert -hubkey ./hubKey -project /ROB/"$PROJECT_NAME" "$PROJECT_NAME" "$CSONAR_HUB_URL" -foreground -property GITHUB_COMMIT_SHA $GITHUB_SHA "$CODESONAR" go_scan.py . -C GO
-     - name: analyze the whole codebase + Kotlin OKHTTP sources
-       run: |
-           "$CODESONAR" analyze -auth certificate -hubuser "$CSONAR_HUB_USER"  -hubcert ./hubCert -hubkey ./hubKey -project /ROB/"$PROJECT_NAME" "$PROJECT_NAME" "$CSONAR_HUB_URL" -foreground -property GITHUB_COMMIT_SHA $GITHUB_SHA "$CODESONAR" kotlin_scan.py OKHTTP/okhttp3
      - name: Fail Action if there are new warnings
        run: newCount=`"$CODESONAR" dump_warnings.py --project-file "$PROJECT_NAME" -auth certificate -hubuser "$CSONAR_HUB_USER" -hubcert ./hubCert -hubkey ./hubKey --hub "$CSONAR_HUB_URL" --visible-warnings new | wc`
      - name: Pull Analysis Results from CodeSonar Hub
